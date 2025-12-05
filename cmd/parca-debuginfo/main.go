@@ -43,6 +43,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/metadata"
 )
 
 const (
@@ -53,16 +54,17 @@ type flags struct {
 	LogLevel string `kong:"enum='error,warn,info,debug',help='Log level.',default='info'"`
 
 	Upload struct {
-		StoreAddress       string `kong:"required,help='gRPC address to sends symbols to.'"`
-		BearerToken        string `kong:"help='Bearer token to authenticate with store.',env='PARCA_DEBUGINFO_BEARER_TOKEN'"`
-		BearerTokenFile    string `kong:"help='File to read bearer token from to authenticate with store.'"`
-		Insecure           bool   `kong:"help='Send gRPC requests via plaintext instead of TLS.'"`
-		InsecureSkipVerify bool   `kong:"help='Skip TLS certificate verification.'"`
-		NoExtract          bool   `kong:"help='Do not extract debug information from binaries, just upload the binary as is.'"`
-		NoInitiate         bool   `kong:"help='Do not initiate the upload, just check if it should be initiated.'"`
-		Force              bool   `kong:"help='Force upload even if the Build ID is already uploaded.'"`
-		Type               string `kong:"enum='debuginfo,executable,sources',help='Type of the debug information to upload.',default='debuginfo'"`
-		BuildID            string `kong:"help='Build ID of the binary to upload.'"`
+		StoreAddress       string            `kong:"required,help='gRPC address to sends symbols to.'"`
+		BearerToken        string            `kong:"help='Bearer token to authenticate with store.',env='PARCA_DEBUGINFO_BEARER_TOKEN'"`
+		BearerTokenFile    string            `kong:"help='File to read bearer token from to authenticate with store.'"`
+		Insecure           bool              `kong:"help='Send gRPC requests via plaintext instead of TLS.'"`
+		InsecureSkipVerify bool              `kong:"help='Skip TLS certificate verification.'"`
+		GRPCHeaders        map[string]string `kong:"help='Additional gRPC headers to send with each request (key=value pairs).'"`
+		NoExtract          bool              `kong:"help='Do not extract debug information from binaries, just upload the binary as is.'"`
+		NoInitiate         bool              `kong:"help='Do not initiate the upload, just check if it should be initiated.'"`
+		Force              bool              `kong:"help='Force upload even if the Build ID is already uploaded.'"`
+		Type               string            `kong:"enum='debuginfo,executable,sources',help='Type of the debug information to upload.',default='debuginfo'"`
+		BuildID            string            `kong:"help='Build ID of the binary to upload.'"`
 
 		Path string `kong:"required,arg,name='path',help='Paths to upload.',type:'path'"`
 	} `cmd:"" help:"Upload debug information files."`
@@ -429,10 +431,21 @@ func grpcConn(reg prometheus.Registerer, flags flags) (*grpc.ClientConn, error) 
 	met.EnableClientHandlingTimeHistogram()
 	reg.MustRegister(met)
 
+	unaryInterceptors := []grpc.UnaryClientInterceptor{
+		met.UnaryClientInterceptor(),
+	}
+	streamInterceptors := []grpc.StreamClientInterceptor{}
+
+	if len(flags.Upload.GRPCHeaders) > 0 {
+		unaryInterceptors = append([]grpc.UnaryClientInterceptor{
+			customHeadersUnaryInterceptor(flags.Upload.GRPCHeaders)}, unaryInterceptors...)
+		streamInterceptors = append([]grpc.StreamClientInterceptor{
+			customHeadersStreamInterceptor(flags.Upload.GRPCHeaders)}, streamInterceptors...)
+	}
+
 	opts := []grpc.DialOption{
-		grpc.WithUnaryInterceptor(
-			met.UnaryClientInterceptor(),
-		),
+		grpc.WithChainUnaryInterceptor(unaryInterceptors...),
+		grpc.WithChainStreamInterceptor(streamInterceptors...),
 	}
 	if flags.Upload.Insecure {
 		opts = append(opts, grpc.WithTransportCredentials(insecure.NewCredentials()))
@@ -478,6 +491,24 @@ func (t *perRequestBearerToken) GetRequestMetadata(ctx context.Context, uri ...s
 
 func (t *perRequestBearerToken) RequireTransportSecurity() bool {
 	return !t.insecure
+}
+
+func customHeadersUnaryInterceptor(headers map[string]string) grpc.UnaryClientInterceptor {
+	return func(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
+		for key, value := range headers {
+			ctx = metadata.AppendToOutgoingContext(ctx, key, value)
+		}
+		return invoker(ctx, method, req, reply, cc, opts...)
+	}
+}
+
+func customHeadersStreamInterceptor(headers map[string]string) grpc.StreamClientInterceptor {
+	return func(ctx context.Context, desc *grpc.StreamDesc, cc *grpc.ClientConn, method string, streamer grpc.Streamer, opts ...grpc.CallOption) (grpc.ClientStream, error) {
+		for key, value := range headers {
+			ctx = metadata.AppendToOutgoingContext(ctx, key, value)
+		}
+		return streamer(ctx, desc, cc, method, opts...)
+	}
 }
 
 func uploadViaSignedURL(ctx context.Context, url string, r io.Reader) error {
