@@ -1,21 +1,87 @@
-run:
-  deadline: 5m
-
+version: "2"
 linters:
-  presets:
-    - bugs
-    - comment
-    - error
-    - format
-    - import
-    - metalinter
-    - performance
-    - style
-    - unused
+  enable:
+    - asasalint
+    - asciicheck
+    - bidichk
+    - bodyclose
+    - canonicalheader
+    - containedctx
+    - contextcheck
+    - copyloopvar
+    - decorder
+    - depguard
+    - dogsled
+    - dupl
+    - dupword
+    - durationcheck
+    - errchkjson
+    - errname
+    - errorlint
+    - exhaustive
+    - exptostd
+    - fatcontext
+    - forbidigo
+    - forcetypeassert
+    - ginkgolinter
+    - gocheckcompilerdirectives
+    - gochecknoinits
+    - gochecksumtype
+    - goconst
+    - gocritic
+    - godot
+    - goheader
+    - gomodguard
+    - goprintffuncname
+    - gosec
+    - gosmopolitan
+    - grouper
+    - iface
+    - importas
+    - inamedparam
+    - interfacebloat
+    - intrange
+    - loggercheck
+    - makezero
+    - mirror
+    - misspell
+    - mnd
+    - musttag
+    - nakedret
+    - nilerr
+    - nilnesserr
+    - nilnil
+    - noctx
+    - nolintlint
+    - nonamedreturns
+    - nosprintfhostport
+    - perfsprint
+    - prealloc
+    - predeclared
+    - promlinter
+    - protogetter
+    - reassign
+    - recvcheck
+    - revive
+    - rowserrcheck
+    - sloglint
+    - spancheck
+    - sqlclosecheck
+    - staticcheck
+    - tagalign
+    - tagliatelle
+    - testifylint
+    - tparallel
+    - unconvert
+    - unparam
+    - usestdlibvars
+    - wastedassign
+    - whitespace
+    - zerologlint
   disable:
+    - err113
     - exhaustruct
     - funlen
-    - gci
     - gochecknoglobals
     - godox
     - gomoddirectives
@@ -27,41 +93,60 @@ linters:
     - varnamelen
     - wrapcheck
     - wsl
-    - err113
-
-issues:
-  exclude-rules:
-    - path: _test.go
-      linters:
-        - errcheck
-
-linters-settings:
-  depguard:
+  settings:
+    cyclop:
+      max-complexity: 15
+    depguard:
+      rules:
+        Main:
+          deny:
+            - pkg: sync/atomic
+              desc: Use go.uber.org/atomic instead of sync/atomic
+            - pkg: github.com/stretchr/testify/assert
+              desc: Use github.com/stretchr/testify/require instead of github.com/stretchr/testify/assert
+            - pkg: github.com/go-kit/kit/log
+              desc: Use github.com/go-kit/log instead of github.com/go-kit/kit/log
+            - pkg: github.com/pkg/errors
+              desc: Use fmt.Errorf instead
+    errcheck:
+      exclude-functions:
+        - (github.com/go-kit/log.Logger).Log
+    misspell:
+      locale: US
+    revive:
+      rules:
+        - name: unexported-return
+          severity: warning
+          disabled: true
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - common-false-positives
+      - legacy
+      - std-error-handling
     rules:
-      Main:
-        deny:
-          - pkg: sync/atomic
-            desc: Use go.uber.org/atomic instead of sync/atomic
-          - pkg: github.com/stretchr/testify/assert
-            desc: Use github.com/stretchr/testify/require instead of github.com/stretchr/testify/assert
-          - pkg: github.com/go-kit/kit/log
-            desc: Use github.com/go-kit/log instead of github.com/go-kit/kit/log
-          - pkg: github.com/pkg/errors
-            desc: Use fmt.Errorf instead
-  errcheck:
-    exclude-functions: ./.errcheck_excludes.txt
-  goimports:
-    local-prefixes: github.com/parca-dev/parca-debuginfo
-  gofumpt:
-    extra-rules: true
-  misspell:
-    locale: US
-  revive:
-    rules:
-      # https://github.com/mgechev/revive/blob/master/RULES_DESCRIPTIONS.md#unexported-return
-      - name: unexported-return
-        severity: warning
-        disabled: true
-  cyclop:
-    # The maximal code complexity to report.
-    max-complexity: 15
+      - linters:
+          - errcheck
+        path: _test.go
+    paths:
+      - third_party$
+      - builtin$
+      - examples$
+formatters:
+  enable:
+    - gofmt
+    - gofumpt
+    - goimports
+  settings:
+    gofumpt:
+      extra-rules: true
+    goimports:
+      local-prefixes:
+        - github.com/parca-dev/parca-debuginfo
+  exclusions:
+    generated: lax
+    paths:
+      - third_party$
+      - builtin$
+      - examples$

@@ -47,7 +47,8 @@ import (
 )
 
 const (
-	LogLevelDebug = "debug"
+	LogLevelDebug              = "debug"
+	headerKeyValuePairElements = 2
 )
 
 type flags struct {
@@ -437,10 +438,14 @@ func grpcConn(reg prometheus.Registerer, flags flags) (*grpc.ClientConn, error) 
 	streamInterceptors := []grpc.StreamClientInterceptor{}
 
 	if len(flags.Upload.GRPCHeaders) > 0 {
-		unaryInterceptors = append([]grpc.UnaryClientInterceptor{
-			customHeadersUnaryInterceptor(flags.Upload.GRPCHeaders)}, unaryInterceptors...)
-		streamInterceptors = append([]grpc.StreamClientInterceptor{
-			customHeadersStreamInterceptor(flags.Upload.GRPCHeaders)}, streamInterceptors...)
+		unaryInterceptors = append(
+			[]grpc.UnaryClientInterceptor{customHeadersUnaryInterceptor(flags.Upload.GRPCHeaders)},
+			unaryInterceptors...,
+		)
+		streamInterceptors = append(
+			[]grpc.StreamClientInterceptor{customHeadersStreamInterceptor(flags.Upload.GRPCHeaders)},
+			streamInterceptors...,
+		)
 	}
 
 	opts := []grpc.DialOption{
@@ -495,19 +500,23 @@ func (t *perRequestBearerToken) RequireTransportSecurity() bool {
 
 func customHeadersUnaryInterceptor(headers map[string]string) grpc.UnaryClientInterceptor {
 	return func(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
+		kvPairs := make([]string, 0, len(headers)*headerKeyValuePairElements)
 		for key, value := range headers {
-			ctx = metadata.AppendToOutgoingContext(ctx, key, value)
+			kvPairs = append(kvPairs, key, value)
 		}
-		return invoker(ctx, method, req, reply, cc, opts...)
+		newCtx := metadata.AppendToOutgoingContext(ctx, kvPairs...)
+		return invoker(newCtx, method, req, reply, cc, opts...)
 	}
 }
 
 func customHeadersStreamInterceptor(headers map[string]string) grpc.StreamClientInterceptor {
 	return func(ctx context.Context, desc *grpc.StreamDesc, cc *grpc.ClientConn, method string, streamer grpc.Streamer, opts ...grpc.CallOption) (grpc.ClientStream, error) {
+		kvPairs := make([]string, 0, len(headers)*headerKeyValuePairElements)
 		for key, value := range headers {
-			ctx = metadata.AppendToOutgoingContext(ctx, key, value)
+			kvPairs = append(kvPairs, key, value)
 		}
-		return streamer(ctx, desc, cc, method, opts...)
+		newCtx := metadata.AppendToOutgoingContext(ctx, kvPairs...)
+		return streamer(newCtx, desc, cc, method, opts...)
 	}
 }
 
@@ -618,7 +627,7 @@ func getNoteHexString(sectionBytes []byte, name string, noteType uint32) (string
 
 	// read descsz and compute the last index of the note data
 	dataSize := binary.LittleEndian.Uint32(sectionBytes[idx-4 : idx])
-	idxDataEnd := uint64(idxDataStart) + uint64(dataSize) //nolint:gosec
+	idxDataEnd := uint64(idxDataStart) + uint64(dataSize)
 
 	// Check sanity (64 is totally arbitrary, as we only use it for Linux ID and Build ID)
 	if idxDataEnd > uint64(len(sectionBytes)) || dataSize > 64 {
